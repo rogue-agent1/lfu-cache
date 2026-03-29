@@ -5,52 +5,78 @@ from collections import defaultdict, OrderedDict
 
 class LFUCache:
     def __init__(self, capacity):
-        self.cap = capacity
-        self.vals = {}
-        self.freqs = {}
-        self.freq_map = defaultdict(OrderedDict)
+        self.capacity = capacity
         self.min_freq = 0
+        self.key_val = {}
+        self.key_freq = {}
+        self.freq_keys = defaultdict(OrderedDict)
+
     def get(self, key):
-        if key not in self.vals: return None
-        self._touch(key)
-        return self.vals[key]
-    def put(self, key, val):
-        if self.cap <= 0: return
-        if key in self.vals:
-            self.vals[key] = val
-            self._touch(key)
+        if key not in self.key_val:
+            return None
+        self._increment_freq(key)
+        return self.key_val[key]
+
+    def put(self, key, value):
+        if self.capacity <= 0:
             return
-        if len(self.vals) >= self.cap:
-            evict_key, _ = self.freq_map[self.min_freq].popitem(last=False)
-            del self.vals[evict_key]
-            del self.freqs[evict_key]
-        self.vals[key] = val
-        self.freqs[key] = 1
-        self.freq_map[1][key] = True
+        if key in self.key_val:
+            self.key_val[key] = value
+            self._increment_freq(key)
+            return
+        if len(self.key_val) >= self.capacity:
+            self._evict()
+        self.key_val[key] = value
+        self.key_freq[key] = 1
+        self.freq_keys[1][key] = True
         self.min_freq = 1
-    def _touch(self, key):
-        f = self.freqs[key]
-        del self.freq_map[f][key]
-        if not self.freq_map[f]:
-            del self.freq_map[f]
-            if self.min_freq == f:
+
+    def _increment_freq(self, key):
+        freq = self.key_freq[key]
+        del self.freq_keys[freq][key]
+        if not self.freq_keys[freq]:
+            del self.freq_keys[freq]
+            if self.min_freq == freq:
                 self.min_freq += 1
-        self.freqs[key] = f + 1
-        self.freq_map[f + 1][key] = True
+        self.key_freq[key] = freq + 1
+        self.freq_keys[freq + 1][key] = True
+
+    def _evict(self):
+        keys = self.freq_keys[self.min_freq]
+        evict_key, _ = keys.popitem(last=False)
+        if not keys:
+            del self.freq_keys[self.min_freq]
+        del self.key_val[evict_key]
+        del self.key_freq[evict_key]
+
+    def size(self):
+        return len(self.key_val)
 
 def test():
-    c = LFUCache(2)
-    c.put("a", 1); c.put("b", 2)
-    assert c.get("a") == 1  # freq(a)=2
-    c.put("c", 3)  # evicts b (freq=1, least recent)
-    assert c.get("b") is None
-    assert c.get("c") == 3
-    c.put("d", 4)  # evicts c (freq=1 < a's freq=2... but c was just accessed so freq=2; a=2, c=2, evict LRU among freq=2)
-    # Actually: a=2, c=2, d=1. min_freq=1, evict d? No, d was just inserted. Let me trace:
-    # After get(c): a=2, c=2. put(d): len=2>=2, min_freq=2, evict LRU of freq 2 = a
-    assert c.get("a") is None
+    c = LFUCache(3)
+    c.put("a", 1)
+    c.put("b", 2)
+    c.put("c", 3)
+    assert c.get("a") == 1
+    assert c.get("a") == 1
+    assert c.get("b") == 2
+    c.put("d", 4)
+    assert c.get("c") is None
     assert c.get("d") == 4
-    print("lfu_cache: all tests passed")
+    assert c.get("a") == 1
+    c.put("e", 5)
+    assert c.get("b") is None
+    assert c.size() == 3
+    c2 = LFUCache(1)
+    c2.put("x", 10)
+    assert c2.get("x") == 10
+    c2.put("y", 20)
+    assert c2.get("x") is None
+    assert c2.get("y") == 20
+    c3 = LFUCache(0)
+    c3.put("z", 1)
+    assert c3.get("z") is None
+    print("All tests passed!")
 
 if __name__ == "__main__":
-    test() if "--test" in sys.argv else print("Usage: lfu_cache.py --test")
+    test() if "--test" in sys.argv else print("lfu_cache: LFU cache. Use --test")
